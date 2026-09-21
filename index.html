@@ -13,17 +13,22 @@
       <div class="auth-card">
         <div class="brand-mark">NGT</div>
         <h1>Acceso APLAN</h1>
-        <p class="muted">Control de accesos · Next Generation Tour</p>
+        <p class="muted">Introduce el código de acceso.</p>
 
-        <form id="loginForm" autocomplete="on">
+        <form id="loginForm" autocomplete="off">
           <label class="field">
-            <span>Correo</span>
-            <input id="emailInput" type="email" autocomplete="username" required />
-          </label>
-
-          <label class="field">
-            <span>Contraseña</span>
-            <input id="passwordInput" type="password" autocomplete="current-password" required />
+            <span>Código de acceso</span>
+            <input
+              id="accessCodeInput"
+              type="password"
+              inputmode="numeric"
+              pattern="[0-9]{5}"
+              maxlength="5"
+              minlength="5"
+              autocomplete="off"
+              aria-label="Código de acceso de 5 dígitos"
+              required
+            />
           </label>
 
           <button id="loginButton" class="btn btn-primary btn-wide" type="submit">
@@ -115,7 +120,6 @@
     </section>
   </div>
 
-  <!-- Modal tarifa salvadoreña -->
   <dialog id="residentDialog" class="modal">
     <form id="residentForm" method="dialog" class="modal-card">
       <div class="modal-head">
@@ -171,7 +175,6 @@
     </form>
   </dialog>
 
-  <!-- Modal cortesía -->
   <dialog id="courtesyDialog" class="modal">
     <form id="courtesyForm" method="dialog" class="modal-card">
       <div class="modal-head">
@@ -223,7 +226,6 @@
     </form>
   </dialog>
 
-  <!-- Modal resultado -->
   <dialog id="resultDialog" class="modal result-modal">
     <div class="modal-card result-card">
       <p class="eyebrow">ACCESO CREADO</p>
@@ -248,11 +250,8 @@
     </div>
   </dialog>
 
-  <!-- Dependencias -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-
-  <!-- Configuración y app -->
   <script src="./config.js"></script>
   <script src="./app.js"></script>
 </body>
