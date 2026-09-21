@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0b0d10" />
+  <title>NGT · APLAN</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div id="app">
+    <section id="loginView" class="screen auth-screen">
+      <div class="auth-card">
+        <div class="brand-mark">NGT</div>
+        <h1>Acceso APLAN</h1>
+        <p class="muted">Control de accesos · Next Generation Tour</p>
+
+        <form id="loginForm" autocomplete="on">
+          <label class="field">
+            <span>Correo</span>
+            <input id="emailInput" type="email" autocomplete="username" required />
+          </label>
+
+          <label class="field">
+            <span>Contraseña</span>
+            <input id="passwordInput" type="password" autocomplete="current-password" required />
+          </label>
+
+          <button id="loginButton" class="btn btn-primary btn-wide" type="submit">
+            Entrar
+          </button>
+
+          <p id="loginError" class="message error hidden"></p>
+        </form>
+      </div>
+    </section>
+
+    <section id="panelView" class="screen hidden">
+      <header class="topbar">
+        <div>
+          <div class="brand-line">
+            <span class="brand-mark small">NGT</span>
+            <span class="separator">·</span>
+            <span id="experienceName" class="experience-name">Cargando…</span>
+          </div>
+          <p id="operatorName" class="operator-name"></p>
+        </div>
+
+        <div class="top-actions">
+          <span id="connectionBadge" class="connection-badge online">Online</span>
+          <button id="logoutButton" class="btn btn-ghost" type="button">Salir</button>
+        </div>
+      </header>
+
+      <main class="panel-shell">
+        <section class="hero">
+          <div>
+            <p class="eyebrow">APLAN</p>
+            <h1>Nuevo acceso</h1>
+            <p class="muted">Selecciona la tarifa correspondiente al visitante.</p>
+          </div>
+        </section>
+
+        <section class="tariff-grid" aria-label="Tipos de acceso">
+          <button id="generalButton" class="tariff-card tariff-general" type="button" disabled>
+            <span class="tariff-label">GENERAL</span>
+            <span id="generalPrice" class="tariff-price">—</span>
+            <span class="tariff-action">Crear acceso</span>
+          </button>
+
+          <button id="residentButton" class="tariff-card tariff-resident" type="button" disabled>
+            <span class="tariff-label">SALVADOREÑA</span>
+            <span id="residentPrice" class="tariff-price">—</span>
+            <span class="tariff-action">Residencia verificada</span>
+          </button>
+
+          <button id="courtesyButton" class="tariff-card tariff-courtesy" type="button" disabled>
+            <span class="tariff-label">CORTESÍA</span>
+            <span id="courtesyPrice" class="tariff-price">$0.00</span>
+            <span class="tariff-action">Registrar motivo</span>
+          </button>
+        </section>
+
+        <section class="today-card">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">HOY</p>
+              <h2 id="todayDate">—</h2>
+            </div>
+            <button id="refreshButton" class="btn btn-ghost" type="button">Actualizar</button>
+          </div>
+
+          <div class="stats-grid">
+            <div class="stat">
+              <span class="stat-label">General</span>
+              <strong id="todayGeneral">—</strong>
+            </div>
+            <div class="stat">
+              <span class="stat-label">Salvadoreña</span>
+              <strong id="todayResident">—</strong>
+            </div>
+            <div class="stat">
+              <span class="stat-label">Cortesías</span>
+              <strong id="todayCourtesy">—</strong>
+            </div>
+            <div class="stat stat-total">
+              <span class="stat-label">Total</span>
+              <strong id="todayTotal">—</strong>
+            </div>
+          </div>
+        </section>
+
+        <p id="globalMessage" class="message hidden"></p>
+      </main>
+    </section>
+  </div>
+
+  <!-- Modal tarifa salvadoreña -->
+  <dialog id="residentDialog" class="modal">
+    <form id="residentForm" method="dialog" class="modal-card">
+      <div class="modal-head">
+        <div>
+          <p class="eyebrow">TARIFA SALVADOREÑA</p>
+          <h2>Residencia verificada</h2>
+        </div>
+        <button class="icon-button" value="cancel" aria-label="Cerrar">×</button>
+      </div>
+
+      <p class="modal-copy">
+        Confirma que verificaste residencia vigente en El Salvador mediante un documento oficial.
+        No introduzcas nombres ni números de documento.
+      </p>
+
+      <fieldset class="choice-list">
+        <legend>Tipo de documento</legend>
+
+        <label class="choice">
+          <input type="radio" name="documentType" value="DUI" required />
+          <span>DUI</span>
+        </label>
+
+        <label class="choice">
+          <input type="radio" name="documentType" value="RESIDENCIA_TEMPORAL" required />
+          <span>Residencia Temporal</span>
+        </label>
+
+        <label class="choice">
+          <input type="radio" name="documentType" value="RESIDENCIA_DEFINITIVA" required />
+          <span>Residencia Definitiva</span>
+        </label>
+
+        <label class="choice">
+          <input type="radio" name="documentType" value="OTRO_AUTORIZADO" required />
+          <span>Otro documento autorizado</span>
+        </label>
+      </fieldset>
+
+      <label class="confirm-row">
+        <input id="residentConfirmed" type="checkbox" required />
+        <span>Confirmo que la residencia en El Salvador fue verificada.</span>
+      </label>
+
+      <div class="modal-actions">
+        <button class="btn btn-secondary" value="cancel" type="button" data-close-dialog="residentDialog">
+          Cancelar
+        </button>
+        <button id="confirmResidentButton" class="btn btn-primary" type="submit">
+          Confirmar tarifa salvadoreña
+        </button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Modal cortesía -->
+  <dialog id="courtesyDialog" class="modal">
+    <form id="courtesyForm" method="dialog" class="modal-card">
+      <div class="modal-head">
+        <div>
+          <p class="eyebrow">CORTESÍA</p>
+          <h2>Motivo obligatorio</h2>
+        </div>
+        <button class="icon-button" value="cancel" aria-label="Cerrar">×</button>
+      </div>
+
+      <fieldset class="choice-list">
+        <legend>Motivo</legend>
+
+        <label class="choice">
+          <input type="radio" name="courtesyReason" value="INVITADO_INSTITUCIONAL" required />
+          <span>Invitado institucional</span>
+        </label>
+
+        <label class="choice">
+          <input type="radio" name="courtesyReason" value="PRENSA" required />
+          <span>Prensa</span>
+        </label>
+
+        <label class="choice">
+          <input type="radio" name="courtesyReason" value="PROMOCION" required />
+          <span>Promoción</span>
+        </label>
+
+        <label class="choice">
+          <input type="radio" name="courtesyReason" value="OTRO" required />
+          <span>Otro</span>
+        </label>
+      </fieldset>
+
+      <label class="field">
+        <span>Nota interna <em>(opcional)</em></span>
+        <textarea id="courtesyNote" rows="3" maxlength="250"
+          placeholder="Máx. 250 caracteres. No introduzcas datos personales."></textarea>
+      </label>
+
+      <div class="modal-actions">
+        <button class="btn btn-secondary" type="button" data-close-dialog="courtesyDialog">
+          Cancelar
+        </button>
+        <button id="confirmCourtesyButton" class="btn btn-primary" type="submit">
+          Crear cortesía
+        </button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Modal resultado -->
+  <dialog id="resultDialog" class="modal result-modal">
+    <div class="modal-card result-card">
+      <p class="eyebrow">ACCESO CREADO</p>
+      <h2 id="resultTariff">—</h2>
+
+      <div class="access-code-box">
+        <span class="access-code-label">CÓDIGO DE ACCESO</span>
+        <strong id="resultAccessCode">NGT-——</strong>
+      </div>
+
+      <div id="qrContainer" class="qr-container" aria-label="Código QR"></div>
+
+      <div class="result-meta">
+        <span id="resultPrice">—</span>
+        <span id="resultCreatedAt">—</span>
+      </div>
+
+      <div class="modal-actions stacked-mobile">
+        <button id="copyCodeButton" class="btn btn-secondary" type="button">Copiar código</button>
+        <button id="newAccessButton" class="btn btn-primary" type="button">Nuevo acceso</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Dependencias -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+
+  <!-- Configuración y app -->
+  <script src="./config.js"></script>
+  <script src="./app.js"></script>
+</body>
+</html>
