@@ -4,29 +4,17 @@
   const cfg = window.NGT_CONFIG;
 
   if (!cfg) {
-    throw new Error("Falta window.NGT_CONFIG. Revisa config.js.");
+    throw new Error("Falta window.NGT_CONFIG.");
   }
 
-  if (!window.supabase) {
-    throw new Error("No se pudo cargar supabase-js.");
-  }
+  const API_URL =
+    `${cfg.SUPABASE_URL}/functions/v1/aplan-api`;
 
-  const { createClient } = window.supabase;
-
-  // IMPORTANTE:
-  // La clave del navegador debe ser Publishable/anon.
-  // NUNCA service_role.
-  const sb = createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY, {
-    auth: {
-      persistSession: true,
-      autoRefreshToken: true,
-      detectSessionInUrl: true
-    }
-  });
+  const SESSION_KEY =
+    "ngt_aplan_panel_session";
 
   const state = {
-    user: null,
-    profile: null,
+    sessionToken: null,
     experience: null,
     tariffs: new Map(),
     busy: false,
@@ -36,9 +24,9 @@
   const el = {
     loginView: document.getElementById("loginView"),
     panelView: document.getElementById("panelView"),
+
     loginForm: document.getElementById("loginForm"),
-    emailInput: document.getElementById("emailInput"),
-    passwordInput: document.getElementById("passwordInput"),
+    accessCodeInput: document.getElementById("accessCodeInput"),
     loginButton: document.getElementById("loginButton"),
     loginError: document.getElementById("loginError"),
 
@@ -60,6 +48,7 @@
     todayResident: document.getElementById("todayResident"),
     todayCourtesy: document.getElementById("todayCourtesy"),
     todayTotal: document.getElementById("todayTotal"),
+
     refreshButton: document.getElementById("refreshButton"),
     globalMessage: document.getElementById("globalMessage"),
 
@@ -84,57 +73,181 @@
   };
 
   function show(view) {
-    el.loginView.classList.toggle("hidden", view !== "login");
-    el.panelView.classList.toggle("hidden", view !== "panel");
+    el.loginView.classList.toggle(
+      "hidden",
+      view !== "login"
+    );
+
+    el.panelView.classList.toggle(
+      "hidden",
+      view !== "panel"
+    );
+
+    if (view === "login") {
+      setTimeout(
+        () => el.accessCodeInput?.focus(),
+        50
+      );
+    }
   }
 
-  function setMessage(node, text = "", type = "") {
+  function setMessage(
+    node,
+    text = "",
+    type = ""
+  ) {
     node.textContent = text;
     node.className = "message";
+
     if (!text) {
       node.classList.add("hidden");
       return;
     }
-    if (type) node.classList.add(type);
+
+    if (type) {
+      node.classList.add(type);
+    }
   }
 
   function money(value) {
-    const n = Number(value ?? 0);
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-      minimumFractionDigits: 2
-    }).format(n);
+    return new Intl.NumberFormat(
+      "en-US",
+      {
+        style: "currency",
+        currency: "USD",
+        minimumFractionDigits: 2
+      }
+    ).format(Number(value ?? 0));
   }
 
-  function formatDateForElSalvador(date = new Date()) {
-    return new Intl.DateTimeFormat("es-SV", {
-      timeZone: cfg.TIME_ZONE,
-      weekday: "long",
-      year: "numeric",
-      month: "long",
-      day: "numeric"
-    }).format(date);
+  function formatDateForElSalvador(
+    date = new Date()
+  ) {
+    return new Intl.DateTimeFormat(
+      "es-SV",
+      {
+        timeZone: cfg.TIME_ZONE,
+        weekday: "long",
+        year: "numeric",
+        month: "long",
+        day: "numeric"
+      }
+    ).format(date);
   }
 
-  function formatTimeForElSalvador(dateValue) {
-    const date = dateValue ? new Date(dateValue) : new Date();
-    return new Intl.DateTimeFormat("es-SV", {
-      timeZone: cfg.TIME_ZONE,
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false
-    }).format(date);
+  function formatTimeForElSalvador(
+    dateValue
+  ) {
+    const date =
+      dateValue
+        ? new Date(dateValue)
+        : new Date();
+
+    return new Intl.DateTimeFormat(
+      "es-SV",
+      {
+        timeZone: cfg.TIME_ZONE,
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false
+      }
+    ).format(date);
+  }
+
+  function saveSession(token) {
+    state.sessionToken = token;
+
+    sessionStorage.setItem(
+      SESSION_KEY,
+      token
+    );
+  }
+
+  function clearSession() {
+    state.sessionToken = null;
+
+    sessionStorage.removeItem(
+      SESSION_KEY
+    );
+  }
+
+  async function api(
+    action,
+    payload = {},
+    requiresSession = true
+  ) {
+    const headers = {
+      "Content-Type": "application/json"
+    };
+
+    // La publishable/anon key puede estar en el navegador.
+    // Nunca uses service_role aquí.
+    if (cfg.SUPABASE_ANON_KEY) {
+      headers["apikey"] =
+        cfg.SUPABASE_ANON_KEY;
+    }
+
+    if (
+      requiresSession &&
+      state.sessionToken
+    ) {
+      headers["Authorization"] =
+        `Bearer ${state.sessionToken}`;
+    }
+
+    const response = await fetch(
+      API_URL,
+      {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          action,
+          ...payload
+        })
+      }
+    );
+
+    let data = null;
+
+    try {
+      data = await response.json();
+    } catch {
+      // Nada.
+    }
+
+    if (!response.ok) {
+      const error = new Error(
+        data?.error || "REQUEST_FAILED"
+      );
+
+      error.status = response.status;
+      error.data = data;
+
+      throw error;
+    }
+
+    return data;
   }
 
   function setBusy(value) {
     state.busy = value;
 
-    const disable = value || !navigator.onLine || !state.experience;
+    const disableAccess =
+      value ||
+      !navigator.onLine ||
+      !state.experience;
 
-    el.generalButton.disabled = disable || !state.tariffs.has("GENERAL");
-    el.residentButton.disabled = disable || !state.tariffs.has("RESIDENT");
-    el.courtesyButton.disabled = disable || !state.tariffs.has("COURTESY");
+    el.generalButton.disabled =
+      disableAccess ||
+      !state.tariffs.has("GENERAL");
+
+    el.residentButton.disabled =
+      disableAccess ||
+      !state.tariffs.has("RESIDENT");
+
+    el.courtesyButton.disabled =
+      disableAccess ||
+      !state.tariffs.has("COURTESY");
 
     el.refreshButton.disabled = value;
     el.loginButton.disabled = value;
@@ -143,111 +256,178 @@
   }
 
   function updateConnectionState() {
-    const online = navigator.onLine;
-    el.connectionBadge.textContent = online ? "Online" : "Sin conexión";
-    el.connectionBadge.classList.toggle("online", online);
-    el.connectionBadge.classList.toggle("offline", !online);
+    const online =
+      navigator.onLine;
 
-    if (!online && !el.panelView.classList.contains("hidden")) {
+    el.connectionBadge.textContent =
+      online
+        ? "Online"
+        : "Sin conexión";
+
+    el.connectionBadge.classList.toggle(
+      "online",
+      online
+    );
+
+    el.connectionBadge.classList.toggle(
+      "offline",
+      !online
+    );
+
+    if (
+      !online &&
+      !el.panelView.classList.contains(
+        "hidden"
+      )
+    ) {
       setMessage(
         el.globalMessage,
-        "Sin conexión. Por seguridad contable, esta versión no crea operaciones offline.",
+        "Sin conexión. Esta versión no crea operaciones offline.",
         "error"
       );
-    } else if (online && el.globalMessage.textContent.includes("Sin conexión")) {
-      setMessage(el.globalMessage);
+    } else if (
+      online &&
+      el.globalMessage.textContent.includes(
+        "Sin conexión"
+      )
+    ) {
+      setMessage(
+        el.globalMessage
+      );
     }
 
     setBusy(state.busy);
   }
 
-  async function requireAuthorizedProfile(userId) {
-    const { data, error } = await sb
-      .from("profiles")
-      .select("id, display_name, role, active")
-      .eq("id", userId)
-      .single();
+  function humanizeError(error) {
+    const code =
+      String(error?.message ?? "");
 
-    if (error) throw error;
-    if (!data?.active) throw new Error("Usuario desactivado.");
-
-    const allowed = ["APLAN_OPERATOR", "APLAN_ADMIN"];
-    if (!allowed.includes(data.role)) {
-      throw new Error("Este usuario no tiene acceso al panel APLAN.");
+    if (code === "ACCESS_DENIED") {
+      return "Código incorrecto.";
     }
 
-    return data;
-  }
-
-  async function loadExperience() {
-    const { data, error } = await sb
-      .from("experiences")
-      .select("id, code, name, timezone, active")
-      .eq("code", cfg.EXPERIENCE_CODE)
-      .eq("active", true)
-      .single();
-
-    if (error) throw error;
-    return data;
-  }
-
-  async function loadTariffs(experienceId) {
-    /*
-      Solo se leen precios públicos para mostrar la interfaz.
-      La cantidad correspondiente a NGT NO se necesita en este panel.
-
-      El backend debe volver a resolver y congelar los importes al crear
-      la operación. El frontend nunca es la autoridad económica.
-    */
-    const nowIso = new Date().toISOString();
-
-    const { data, error } = await sb
-      .from("tariff_configs")
-      .select("id, tariff_type, public_price, valid_from, valid_until, active")
-      .eq("experience_id", experienceId)
-      .eq("active", true)
-      .lte("valid_from", nowIso)
-      .or(`valid_until.is.null,valid_until.gt.${nowIso}`);
-
-    if (error) throw error;
-
-    state.tariffs.clear();
-    for (const tariff of data ?? []) {
-      state.tariffs.set(tariff.tariff_type, tariff);
+    if (code === "TOO_MANY_ATTEMPTS") {
+      return "Demasiados intentos incorrectos. Espera unos minutos e inténtalo de nuevo.";
     }
+
+    if (
+      code === "INVALID_SESSION" ||
+      code === "SESSION_EXPIRED"
+    ) {
+      return "La sesión terminó. Introduce de nuevo el código de acceso.";
+    }
+
+    if (
+      code === "RESIDENCY_VERIFICATION_REQUIRED"
+    ) {
+      return "Debes confirmar la verificación de residencia.";
+    }
+
+    if (
+      code === "COURTESY_REASON_REQUIRED"
+    ) {
+      return "Debes seleccionar el motivo de la cortesía.";
+    }
+
+    if (
+      /fetch|network/i.test(
+        String(error)
+      )
+    ) {
+      return "No se pudo conectar con Supabase. Comprueba Internet.";
+    }
+
+    return "No se pudo completar la operación.";
   }
 
   function renderTariffs() {
-    el.generalPrice.textContent = state.tariffs.has("GENERAL")
-      ? money(state.tariffs.get("GENERAL").public_price)
-      : "No disponible";
+    el.generalPrice.textContent =
+      state.tariffs.has("GENERAL")
+        ? money(
+            state.tariffs.get(
+              "GENERAL"
+            ).public_price
+          )
+        : "No disponible";
 
-    el.residentPrice.textContent = state.tariffs.has("RESIDENT")
-      ? money(state.tariffs.get("RESIDENT").public_price)
-      : "No disponible";
+    el.residentPrice.textContent =
+      state.tariffs.has("RESIDENT")
+        ? money(
+            state.tariffs.get(
+              "RESIDENT"
+            ).public_price
+          )
+        : "No disponible";
 
-    el.courtesyPrice.textContent = state.tariffs.has("COURTESY")
-      ? money(state.tariffs.get("COURTESY").public_price)
-      : "$0.00";
+    el.courtesyPrice.textContent =
+      state.tariffs.has("COURTESY")
+        ? money(
+            state.tariffs.get(
+              "COURTESY"
+            ).public_price
+          )
+        : "$0.00";
   }
 
-  async function loadTodaySummary() {
-    if (!state.experience) return;
+  function renderSummary(summary) {
+    el.todayGeneral.textContent =
+      summary?.general_count ?? 0;
 
-    const { data, error } = await sb.rpc(cfg.RPC_TODAY_SUMMARY, {
-      p_experience_id: state.experience.id
-    });
+    el.todayResident.textContent =
+      summary?.resident_count ?? 0;
 
-    if (error) throw error;
+    el.todayCourtesy.textContent =
+      summary?.courtesy_count ?? 0;
 
-    // La función puede devolver un objeto directamente o una fila.
-    const summary = Array.isArray(data) ? data[0] : data;
+    el.todayTotal.textContent =
+      summary?.total_count ?? 0;
 
-    el.todayGeneral.textContent = summary?.general_count ?? 0;
-    el.todayResident.textContent = summary?.resident_count ?? 0;
-    el.todayCourtesy.textContent = summary?.courtesy_count ?? 0;
-    el.todayTotal.textContent = summary?.total_count ?? 0;
-    el.todayDate.textContent = formatDateForElSalvador();
+    el.todayDate.textContent =
+      formatDateForElSalvador();
+  }
+
+  async function loadPanel() {
+    const data =
+      await api(
+        "bootstrap"
+      );
+
+    state.experience =
+      data.experience;
+
+    state.tariffs.clear();
+
+    for (
+      const tariff
+      of data.tariffs ?? []
+    ) {
+      state.tariffs.set(
+        tariff.tariff_type,
+        tariff
+      );
+    }
+
+    el.experienceName.textContent =
+      state.experience?.name ??
+      "Palacio Nacional";
+
+    el.operatorName.textContent =
+      "APLAN";
+
+    renderTariffs();
+    renderSummary(data.summary);
+
+    show("panel");
+  }
+
+  async function refreshSummary() {
+    const summary =
+      await api(
+        "today_summary"
+      );
+
+    renderSummary(summary);
   }
 
   async function createOperation({
@@ -256,13 +436,17 @@
     courtesyReason = null,
     courtesyNote = null
   }) {
-    if (state.busy) return;
+    if (state.busy) {
+      return;
+    }
+
     if (!navigator.onLine) {
       setMessage(
         el.globalMessage,
         "No se puede crear el acceso sin conexión en esta versión.",
         "error"
       );
+
       return;
     }
 
@@ -270,297 +454,541 @@
     setMessage(el.globalMessage);
 
     try {
-      /*
-        Este RPC es la barrera de seguridad:
-        - valida el usuario y rol;
-        - resuelve la tarifa vigente server-side;
-        - obliga evidencia para RESIDENT;
-        - obliga motivo para COURTESY;
-        - genera access_code;
-        - congela snapshots económicos;
-        - escribe audit log.
+      const operation =
+        await api(
+          "create_operation",
+          {
+            tariff_type:
+              tariffType,
 
-        El navegador NO envía public_price ni ngt_amount.
-      */
-      const { data, error } = await sb.rpc(cfg.RPC_CREATE_OPERATION, {
-        p_experience_id: state.experience.id,
-        p_tariff_type: tariffType,
-        p_verification_document_type: verificationDocumentType,
-        p_courtesy_reason: courtesyReason,
-        p_courtesy_note: courtesyNote
-      });
+            verification_document_type:
+              verificationDocumentType,
 
-      if (error) throw error;
+            courtesy_reason:
+              courtesyReason,
 
-      const operation = Array.isArray(data) ? data[0] : data;
-      if (!operation?.access_code) {
-        throw new Error("El servidor no devolvió un access_code válido.");
+            courtesy_note:
+              courtesyNote
+          }
+        );
+
+      if (
+        !operation?.access_code
+      ) {
+        throw new Error(
+          "INVALID_OPERATION_RESPONSE"
+        );
       }
 
-      state.lastOperation = operation;
-      showOperationResult(operation);
-      await loadTodaySummary();
+      state.lastOperation =
+        operation;
+
+      showOperationResult(
+        operation
+      );
+
+      await refreshSummary();
+
     } catch (error) {
       console.error(error);
+
+      if (
+        error.status === 401
+      ) {
+        clearSession();
+        show("login");
+      }
+
       setMessage(
-        el.globalMessage,
+        error.status === 401
+          ? el.loginError
+          : el.globalMessage,
         humanizeError(error),
         "error"
       );
+
     } finally {
       setBusy(false);
     }
   }
 
-  function humanizeError(error) {
-    const raw = String(error?.message ?? error ?? "");
-
-    if (/jwt|session|auth/i.test(raw)) {
-      return "Tu sesión no es válida. Vuelve a iniciar sesión.";
-    }
-
-    if (/permission|policy|rls|authorized|role/i.test(raw)) {
-      return "No tienes permiso para realizar esta acción.";
-    }
-
-    if (/network|fetch/i.test(raw)) {
-      return "No se pudo conectar con el servidor. Comprueba Internet e inténtalo de nuevo.";
-    }
-
-    // En producción puede sustituirse por un mapa de códigos de error
-    // devueltos por el backend para no mostrar detalles internos.
-    return raw || "No se pudo completar la operación.";
-  }
-
-  function showOperationResult(operation) {
+  function showOperationResult(
+    operation
+  ) {
     const labels = {
-      GENERAL: "Tarifa general",
-      RESIDENT: "Tarifa salvadoreña",
-      COURTESY: "Cortesía"
+      GENERAL:
+        "Tarifa general",
+
+      RESIDENT:
+        "Tarifa salvadoreña",
+
+      COURTESY:
+        "Cortesía"
     };
 
-    el.resultTariff.textContent = labels[operation.tariff_type] ?? operation.tariff_type;
-    el.resultAccessCode.textContent = operation.access_code;
-    el.resultPrice.textContent = money(operation.public_price ?? 0);
-    el.resultCreatedAt.textContent = formatTimeForElSalvador(operation.created_at);
+    el.resultTariff.textContent =
+      labels[
+        operation.tariff_type
+      ] ??
+      operation.tariff_type;
 
-    el.qrContainer.innerHTML = "";
+    el.resultAccessCode.textContent =
+      operation.access_code;
+
+    el.resultPrice.textContent =
+      money(
+        operation.public_price ?? 0
+      );
+
+    el.resultCreatedAt.textContent =
+      formatTimeForElSalvador(
+        operation.created_at
+      );
+
+    el.qrContainer.innerHTML =
+      "";
 
     if (window.QRCode) {
-      new window.QRCode(el.qrContainer, {
-        text: operation.access_code,
-        width: 160,
-        height: 160,
-        correctLevel: window.QRCode.CorrectLevel.M
-      });
+      new window.QRCode(
+        el.qrContainer,
+        {
+          text:
+            operation.access_code,
+
+          width: 160,
+          height: 160,
+
+          correctLevel:
+            window.QRCode
+              .CorrectLevel.M
+        }
+      );
     } else {
-      el.qrContainer.textContent = "QR no disponible";
+      el.qrContainer.textContent =
+        "QR no disponible";
     }
 
-    if (!el.resultDialog.open) {
+    if (
+      !el.resultDialog.open
+    ) {
       el.resultDialog.showModal();
     }
   }
 
-  async function initializePanel(session) {
-    state.user = session.user;
-    setBusy(true);
+  // ==========================================================
+  // LOGIN
+  // ==========================================================
 
-    try {
-      state.profile = await requireAuthorizedProfile(session.user.id);
-      state.experience = await loadExperience();
-      await loadTariffs(state.experience.id);
+  el.accessCodeInput.addEventListener(
+    "input",
+    () => {
+      el.accessCodeInput.value =
+        el.accessCodeInput.value
+          .replace(/\D/g, "")
+          .slice(0, 5);
 
-      el.experienceName.textContent = state.experience.name;
-      el.operatorName.textContent =
-        state.profile.display_name || session.user.email || "Operador";
-
-      renderTariffs();
-      await loadTodaySummary();
-      show("panel");
-    } catch (error) {
-      console.error(error);
-      await sb.auth.signOut();
-      show("login");
-      setMessage(el.loginError, humanizeError(error), "error");
-    } finally {
-      setBusy(false);
-      updateConnectionState();
+      setMessage(
+        el.loginError
+      );
     }
-  }
+  );
+
+  el.loginForm.addEventListener(
+    "submit",
+    async (event) => {
+      event.preventDefault();
+
+      if (state.busy) {
+        return;
+      }
+
+      const code =
+        el.accessCodeInput
+          .value
+          .trim();
+
+      if (!/^\d{5}$/.test(code)) {
+        setMessage(
+          el.loginError,
+          "Introduce un código de 5 dígitos.",
+          "error"
+        );
+
+        return;
+      }
+
+      setBusy(true);
+      setMessage(el.loginError);
+
+      try {
+        const data =
+          await api(
+            "login",
+            { code },
+            false
+          );
+
+        if (
+          !data?.session_token
+        ) {
+          throw new Error(
+            "INVALID_SESSION_RESPONSE"
+          );
+        }
+
+        saveSession(
+          data.session_token
+        );
+
+        // Se elimina el código del campo
+        // inmediatamente.
+        el.accessCodeInput.value =
+          "";
+
+        await loadPanel();
+
+      } catch (error) {
+        console.error(error);
+
+        clearSession();
+
+        el.accessCodeInput.value =
+          "";
+
+        el.accessCodeInput.focus();
+
+        setMessage(
+          el.loginError,
+          humanizeError(error),
+          "error"
+        );
+
+      } finally {
+        setBusy(false);
+      }
+    }
+  );
+
+  // ==========================================================
+  // LOGOUT
+  // ==========================================================
+
+  el.logoutButton.addEventListener(
+    "click",
+    () => {
+      clearSession();
+
+      state.experience = null;
+      state.tariffs.clear();
+      state.lastOperation = null;
+
+      el.accessCodeInput.value =
+        "";
+
+      show("login");
+    }
+  );
+
+  // ==========================================================
+  // GENERAL
+  // ==========================================================
+
+  el.generalButton.addEventListener(
+    "click",
+    () => {
+      createOperation({
+        tariffType: "GENERAL"
+      });
+    }
+  );
+
+  // ==========================================================
+  // RESIDENTE
+  // ==========================================================
+
+  el.residentButton.addEventListener(
+    "click",
+    () => {
+      el.residentForm.reset();
+      el.residentDialog.showModal();
+    }
+  );
+
+  el.residentForm.addEventListener(
+    "submit",
+    async (event) => {
+      event.preventDefault();
+
+      const form =
+        new FormData(
+          el.residentForm
+        );
+
+      const documentType =
+        form.get(
+          "documentType"
+        );
+
+      if (
+        !documentType ||
+        !el.residentConfirmed.checked
+      ) {
+        return;
+      }
+
+      el.residentDialog.close();
+
+      await createOperation({
+        tariffType:
+          "RESIDENT",
+
+        verificationDocumentType:
+          String(documentType)
+      });
+    }
+  );
+
+  // ==========================================================
+  // CORTESÍA
+  // ==========================================================
+
+  el.courtesyButton.addEventListener(
+    "click",
+    () => {
+      el.courtesyForm.reset();
+      el.courtesyDialog.showModal();
+    }
+  );
+
+  el.courtesyForm.addEventListener(
+    "submit",
+    async (event) => {
+      event.preventDefault();
+
+      const form =
+        new FormData(
+          el.courtesyForm
+        );
+
+      const reason =
+        form.get(
+          "courtesyReason"
+        );
+
+      if (!reason) {
+        return;
+      }
+
+      const note =
+        el.courtesyNote
+          .value
+          .trim();
+
+      el.courtesyDialog.close();
+
+      await createOperation({
+        tariffType:
+          "COURTESY",
+
+        courtesyReason:
+          String(reason),
+
+        courtesyNote:
+          note || null
+      });
+    }
+  );
+
+  // ==========================================================
+  // DIALOGS
+  // ==========================================================
+
+  document
+    .querySelectorAll(
+      "[data-close-dialog]"
+    )
+    .forEach(
+      (button) => {
+        button.addEventListener(
+          "click",
+          () => {
+            const dialog =
+              document.getElementById(
+                button.dataset
+                  .closeDialog
+              );
+
+            dialog?.close();
+          }
+        );
+      }
+    );
+
+  el.copyCodeButton.addEventListener(
+    "click",
+    async () => {
+      const code =
+        state.lastOperation
+          ?.access_code;
+
+      if (!code) {
+        return;
+      }
+
+      try {
+        await navigator
+          .clipboard
+          .writeText(code);
+
+        el.copyCodeButton.textContent =
+          "Copiado";
+
+        setTimeout(
+          () => {
+            el.copyCodeButton.textContent =
+              "Copiar código";
+          },
+          1200
+        );
+
+      } catch {
+        el.copyCodeButton.textContent =
+          code;
+      }
+    }
+  );
+
+  el.newAccessButton.addEventListener(
+    "click",
+    () => {
+      el.resultDialog.close();
+      state.lastOperation = null;
+    }
+  );
+
+  // ==========================================================
+  // ACTUALIZAR
+  // ==========================================================
+
+  el.refreshButton.addEventListener(
+    "click",
+    async () => {
+      if (state.busy) {
+        return;
+      }
+
+      setBusy(true);
+
+      try {
+        await refreshSummary();
+
+        setMessage(
+          el.globalMessage,
+          "Datos actualizados.",
+          "success"
+        );
+
+        setTimeout(
+          () => {
+            setMessage(
+              el.globalMessage
+            );
+          },
+          1800
+        );
+
+      } catch (error) {
+        console.error(error);
+
+        if (
+          error.status === 401
+        ) {
+          clearSession();
+          show("login");
+
+          setMessage(
+            el.loginError,
+            humanizeError(error),
+            "error"
+          );
+
+          return;
+        }
+
+        setMessage(
+          el.globalMessage,
+          humanizeError(error),
+          "error"
+        );
+
+      } finally {
+        setBusy(false);
+      }
+    }
+  );
+
+  // ==========================================================
+  // CONEXIÓN
+  // ==========================================================
+
+  window.addEventListener(
+    "online",
+    updateConnectionState
+  );
+
+  window.addEventListener(
+    "offline",
+    updateConnectionState
+  );
+
+  // ==========================================================
+  // ARRANQUE
+  // ==========================================================
 
   async function bootstrap() {
-    el.todayDate.textContent = formatDateForElSalvador();
+    el.todayDate.textContent =
+      formatDateForElSalvador();
+
     updateConnectionState();
 
-    const { data, error } = await sb.auth.getSession();
+    const stored =
+      sessionStorage.getItem(
+        SESSION_KEY
+      );
 
-    if (error) {
-      console.error(error);
+    if (!stored) {
       show("login");
-      setMessage(el.loginError, "No se pudo restaurar la sesión.", "error");
       return;
     }
 
-    if (data.session) {
-      await initializePanel(data.session);
-    } else {
+    state.sessionToken =
+      stored;
+
+    setBusy(true);
+
+    try {
+      await loadPanel();
+
+    } catch (error) {
+      console.error(error);
+
+      clearSession();
       show("login");
+
+      if (
+        error.status === 401
+      ) {
+        setMessage(
+          el.loginError,
+          "La sesión terminó. Introduce de nuevo el código.",
+          "error"
+        );
+      }
+
+    } finally {
+      setBusy(false);
     }
   }
-
-  // LOGIN
-  el.loginForm.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    if (state.busy) return;
-
-    setBusy(true);
-    setMessage(el.loginError);
-
-    try {
-      const email = el.emailInput.value.trim();
-      const password = el.passwordInput.value;
-
-      const { data, error } = await sb.auth.signInWithPassword({
-        email,
-        password
-      });
-
-      if (error) throw error;
-      if (!data.session) throw new Error("No se recibió una sesión válida.");
-
-      el.passwordInput.value = "";
-      await initializePanel(data.session);
-    } catch (error) {
-      console.error(error);
-      setMessage(el.loginError, "Correo o contraseña incorrectos, o acceso no autorizado.", "error");
-    } finally {
-      setBusy(false);
-    }
-  });
-
-  // LOGOUT
-  el.logoutButton.addEventListener("click", async () => {
-    setBusy(true);
-    try {
-      await sb.auth.signOut();
-      state.user = null;
-      state.profile = null;
-      state.experience = null;
-      state.tariffs.clear();
-      show("login");
-    } finally {
-      setBusy(false);
-    }
-  });
-
-  // GENERAL
-  el.generalButton.addEventListener("click", () => {
-    createOperation({ tariffType: "GENERAL" });
-  });
-
-  // RESIDENT
-  el.residentButton.addEventListener("click", () => {
-    el.residentForm.reset();
-    el.residentDialog.showModal();
-  });
-
-  el.residentForm.addEventListener("submit", async (event) => {
-    event.preventDefault();
-
-    const form = new FormData(el.residentForm);
-    const documentType = form.get("documentType");
-
-    if (!documentType || !el.residentConfirmed.checked) return;
-
-    el.residentDialog.close();
-
-    await createOperation({
-      tariffType: "RESIDENT",
-      verificationDocumentType: String(documentType)
-    });
-  });
-
-  // COURTESY
-  el.courtesyButton.addEventListener("click", () => {
-    el.courtesyForm.reset();
-    el.courtesyDialog.showModal();
-  });
-
-  el.courtesyForm.addEventListener("submit", async (event) => {
-    event.preventDefault();
-
-    const form = new FormData(el.courtesyForm);
-    const reason = form.get("courtesyReason");
-
-    if (!reason) return;
-
-    const note = el.courtesyNote.value.trim();
-
-    el.courtesyDialog.close();
-
-    await createOperation({
-      tariffType: "COURTESY",
-      courtesyReason: String(reason),
-      courtesyNote: note || null
-    });
-  });
-
-  // CIERRES DE DIALOG
-  document.querySelectorAll("[data-close-dialog]").forEach((button) => {
-    button.addEventListener("click", () => {
-      const dialog = document.getElementById(button.dataset.closeDialog);
-      dialog?.close();
-    });
-  });
-
-  // RESULTADO
-  el.copyCodeButton.addEventListener("click", async () => {
-    const code = state.lastOperation?.access_code;
-    if (!code) return;
-
-    try {
-      await navigator.clipboard.writeText(code);
-      el.copyCodeButton.textContent = "Copiado";
-      setTimeout(() => {
-        el.copyCodeButton.textContent = "Copiar código";
-      }, 1200);
-    } catch {
-      el.copyCodeButton.textContent = code;
-    }
-  });
-
-  el.newAccessButton.addEventListener("click", () => {
-    el.resultDialog.close();
-    state.lastOperation = null;
-  });
-
-  // REFRESH
-  el.refreshButton.addEventListener("click", async () => {
-    if (state.busy) return;
-    setBusy(true);
-    try {
-      await loadTariffs(state.experience.id);
-      renderTariffs();
-      await loadTodaySummary();
-      setMessage(el.globalMessage, "Datos actualizados.", "success");
-      setTimeout(() => setMessage(el.globalMessage), 1800);
-    } catch (error) {
-      console.error(error);
-      setMessage(el.globalMessage, humanizeError(error), "error");
-    } finally {
-      setBusy(false);
-    }
-  });
-
-  window.addEventListener("online", updateConnectionState);
-  window.addEventListener("offline", updateConnectionState);
-
-  sb.auth.onAuthStateChange((event, session) => {
-    if (event === "SIGNED_OUT") {
-      show("login");
-    }
-  });
 
   bootstrap();
 })();
